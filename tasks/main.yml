@@ -17,7 +17,6 @@
     home: /etc/grok_exporter
 
 - name: Download grok_exporter archive
-  become: false
   get_url:
     url: "{{ grok_exporter_git_url }}/releases/download/v{{ grok_exporter_version }}/grok_exporter-{{ grok_exporter_version }}.linux-amd64.zip"
     dest: "/tmp/grok_exporter-{{ grok_exporter_version }}.linux-amd64.zip"
@@ -25,9 +24,6 @@
   until: _download_binary is succeeded
   retries: 5
   delay: 2
-  delegate_to: localhost
-  check_mode: false
-  run_once: true
 
 - name: Propagate grok_exporter to the machine we want it installed into
   unarchive:
@@ -36,8 +32,8 @@
     creates: "/etc/grok_exporter-{{ grok_exporter_version }}.linux-amd64"
     owner: "{{ grok_exporter_system_user }}"
     group: "{{ grok_exporter_system_group }}"
+    remote_src: yes
   notify: restart grok_exporters
-  when: not ansible_check_mode
 
 - name: Move /etc/grok_exporter-{{ grok_exporter_version }}.linux-amd64 to /etc/grok_exporter
   shell: "mv grok_exporter-{{ grok_exporter_version }}.linux-amd64/* grok_exporter && touch grok_exporter_copied_{{ grok_exporter_version }}"
@@ -45,17 +41,13 @@
     chdir: /etc
     creates: "/etc/grok_exporter_copied_{{ grok_exporter_version }}"
 
-- name: Copy the Grok Exporter systemd service file
+- name: Copy the Grok Exporter sysvinit script
   template:
-    src: grok_exporter.service.j2
-    dest: /etc/systemd/system/grok_exporter@.service
+    src: init.sh.j2
+    dest: /etc/init.d/grok-exporter
     owner: root
     group: root
-    mode: 0644
-  notify: reload systemd for grok_exporters
-
-- name: If a new service was added SystemD needs to know about it
-  meta: flush_handlers
+    mode: 0755
 
 - name: Copy the Grok Exporter config file
   template:
@@ -67,9 +59,8 @@
   notify: restart grok_exporters
   with_items: "{{ grok_services }}"
 
-- name: Make sure all grok_exporter*.service run at astartup
-  systemd:
-    name: "grok_exporter@{{ item.name }}.service"
+- name: Make sure grok-exporter runs at astartup
+  service:
+    name: "grok-exporter"
     enabled: yes
     state: started
-  with_items: "{{ grok_services }}"
